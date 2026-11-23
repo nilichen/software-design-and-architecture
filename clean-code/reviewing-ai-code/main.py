@@ -1,15 +1,13 @@
 """Run a few fixed checkouts and print what happens. Money is in cents."""
 
-from datetime import date
-
-
 from partner import LeasedVan
+from payments import PaymentMethod, make_payer
 from pricing import format_cents, weekend_deal
-from rental import RentalDesk
-from vehicles import Car, Van
+from rental import Customer, RentalDesk, receipt
+from vehicles import Car, LeasedVanAdapter, Priced, Van, VehicleKind
 
-START = date(2026, 11, 20)
 CARD = "4242424242424242"
+ANA = Customer(first_name="Ana", last_name="Silva", email="ana@example.com")
 
 CARS = [
     ("AB-123", "suv"),
@@ -29,33 +27,38 @@ BOOKINGS = [
 ]
 
 
+def load_fleet() -> dict[str, Priced]:
+    fleet: dict[str, Priced] = {}
+    for plate, kind in CARS:
+        try:
+            fleet[plate] = Car(VehicleKind(kind))
+        except ValueError as error:
+            print(f"Rejected {plate}: {error}")
+    fleet["EF-789"] = Van(daily_rate_cents=9500)
+    fleet["JK-345"] = LeasedVanAdapter(LeasedVan("PARTNER-7", 110.0))
+    return fleet
+
+
 def main() -> None:
-    fleet = {plate: Car(kind) for plate, kind in CARS}
-    fleet["EF-789"] = Van(9500)
-    fleet["JK-345"] = LeasedVan("PARTNER-7", 110.0)
+    fleet = load_fleet()
     desk = RentalDesk(fleet)
 
-    for plate, amount, extras, method, account in BOOKINGS:
-        card = account if method == "card" else None
-        paypal = account if method == "paypal" else None
+    for plate, days, extras_cents, method, account in BOOKINGS:
         try:
-            booking = desk.checkout(
-                plate, "Ana", "Silva", "ana@example.com", amount, extras,
-                card, paypal, False, START,
-            )
+            booking = desk.pick_up(plate, ANA, days, extras_cents)
         except KeyError as error:
             print(f"Checkout failed for {plate}: {error!r}")
             continue
-        print(f"  Booking {booking.booking_id}: {desk.receipt(booking)}")
+        make_payer(PaymentMethod(method), account).pay(booking.total_cents())
+        print(f"  Booking {booking.booking_id}: {receipt(booking)}")
 
-    desk.checkout("AB-123", "", "", "", 0, [], None, None, True, START)
+    desk.return_car("AB-123")
     desk.rented.discard("EF-789")  # a support script fixes a record by hand
 
     print(f"Cars out: {desk.cars_out} of {len(fleet)}")
     print("Available:")
-    available = desk.available()
-    for i in range(len(available)):
-        print(f"  {i + 1}. {available[i]}")
+    for number, plate in enumerate(desk.available(), start=1):
+        print(f"  {number}. {plate}")
 
     deal = weekend_deal(fleet["AB-123"].price(3))
     print(f"Weekend deal, AB-123 for 3 days: {format_cents(deal)}")

@@ -1,31 +1,43 @@
-"""Payments. Payment("card", ...) gives you the right kind of payment."""
+"""Payments: one plain class per method, and a dict to pick one."""
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from enum import Enum
+from typing import Protocol
 
 from pricing import format_cents
 
 
-class Payment:
-    def __new__(cls, method: str, account: str):
-        if cls is Payment:
-            if method == "card":
-                return super().__new__(CardPayment)
-            if method == "paypal":
-                return super().__new__(PayPalPayment)
-            raise ValueError(f"unknown payment method: {method}")
-        return super().__new__(cls)
+class Payer(Protocol):
+    def pay(self, cents: int) -> None: ...
 
-    def __init__(self, method: str, account: str) -> None:
-        self.method = method
-        self.account = account
+
+class PaymentMethod(Enum):
+    CARD = "card"
+    PAYPAL = "paypal"
+
+
+@dataclass(frozen=True)
+class CardPayment:
+    card_number: str
 
     def pay(self, cents: int) -> None:
-        raise NotImplementedError
+        print(f"  Charged {format_cents(cents)} to card ending {self.card_number[-4:]}")
 
 
-class CardPayment(Payment):
+@dataclass(frozen=True)
+class PayPalPayment:
+    email: str
+
     def pay(self, cents: int) -> None:
-        print(f"  Charged {format_cents(cents)} to card ending {self.account[-4:]}")
+        print(f"  Charged {format_cents(cents)} to PayPal {self.email}")
 
 
-class PayPalPayment(Payment):
-    def pay(self, cents: int) -> None:
-        print(f"  Charged {format_cents(cents)} to PayPal {self.account}")
+PAYERS: dict[PaymentMethod, Callable[[str], Payer]] = {
+    PaymentMethod.CARD: CardPayment,
+    PaymentMethod.PAYPAL: PayPalPayment,
+}
+
+
+def make_payer(method: PaymentMethod, account: str) -> Payer:
+    return PAYERS[method](account)

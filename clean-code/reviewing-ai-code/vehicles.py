@@ -1,25 +1,58 @@
-"""The vehicles we rent out."""
+"""The vehicles we rent out. Every vehicle answers price(days) in cents."""
 
-from datetime import date
+from dataclasses import dataclass
+from datetime import date, timedelta
+from enum import Enum
+from typing import Protocol
+
+from partner import LeasedVan
 
 
+class VehicleKind(Enum):
+    ECONOMY = "economy"
+    COMPACT = "compact"
+    SUV = "suv"
+    TRUCK = "truck"
+
+
+DAILY_RATE_CENTS = {
+    VehicleKind.ECONOMY: 4500,
+    VehicleKind.COMPACT: 6000,
+    VehicleKind.SUV: 8000,
+}
+
+
+class Priced(Protocol):
+    def price(self, days: int) -> int: ...
+
+
+@dataclass(frozen=True)
 class Car:
-    def __init__(self, kind: str) -> None:
-        self.kind = kind  # "economy", "compact", "suv" or "truck"
+    kind: VehicleKind
+
+    @property
+    def daily_rate_cents(self) -> int:
+        return DAILY_RATE_CENTS[self.kind]
 
     def price(self, days: int) -> int:
-        if self.kind == "suv":
-            rate = 8000
-        elif self.kind == "compact":
-            rate = 6000
-        else:
-            rate = 4500
-        return rate * days
+        return self.daily_rate_cents * days
 
 
+@dataclass(frozen=True)
 class Van:
-    def __init__(self, cost_per_day: int) -> None:
-        self.cost_per_day = cost_per_day
+    daily_rate_cents: int
 
-    def cost(self, start: date, end: date) -> int:
-        return self.cost_per_day * (end - start).days
+    def price(self, days: int) -> int:
+        return self.daily_rate_cents * days
+
+
+class LeasedVanAdapter:
+    """Gives a partner's LeasedVan our price(days) interface."""
+
+    def __init__(self, van: LeasedVan) -> None:
+        self.van = van
+
+    def price(self, days: int) -> int:
+        start = date.today()
+        euros = self.van.quote(start, start + timedelta(days=days))
+        return round(euros * 100)
