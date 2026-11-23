@@ -3,151 +3,136 @@
 Run: python3 main.py
 """
 
-from dataclasses import dataclass
 from datetime import date
 
-import card_provider
+import events
+import invoices
+import notifications
+import payments
+from pricing import euros
+from rental import Customer, Extra, RentalContract, Vehicle
 
-try:
-    import numpy as np
-except ImportError:  # not installed on every machine
-    np = None
-
-CENTS_PER_KM = 25
-CREDIT_FEE_PERCENT = 2
-VEHICLES = {  # vehicle type -> (cents per day, free km per day)
-    "compact": (3_000, 100),
-    "suv": (4_500, 100),
-    "van": (6_000, 50),
+VEHICLES = {
+    "compact": Vehicle("compact", rate=3_000, free_km=100),
+    "suv": Vehicle("suv", rate=4_500, free_km=100),
+    "van": Vehicle("van", rate=6_000, free_km=50),
 }
+PAY = {"debit": payments.pay_debit, "credit": payments.pay_credit}
 
 # The day's bookings, as they come out of the booking form.
 BOOKINGS = [
     {
-        "id": "B1", "name": "Ana Silva", "email": "ana.silva@example.com",
-        "vehicle": "suv", "days": 3, "km": 450, "pickup": date(2026, 12, 1),
-        "extras": [("gps", 1_000)], "dropped": [], "discount": 10,
-        "method": "credit", "card": "4000000000001111", "cancelled": False,
-    },
-    {
-        "id": "B2", "name": "Ana Silva", "email": "ana.silva@example.com",
-        "vehicle": "van", "days": 2, "km": 180, "pickup": date(2026, 12, 8),
-        "extras": [("gps", 1_000), ("child_seat", 500)], "dropped": ["gps"],
-        "discount": 0, "method": "debit", "card": "5000000000002222",
+        "id": "B1",
+        "name": "Ana Silva",
+        "email": "ana.silva@example.com",
+        "vehicle": "suv",
+        "days": 3,
+        "km": 450,
+        "pickup": date(2026, 12, 1),
+        "extras": [("gps", 1_000)],
+        "dropped": [],
+        "discount": 10,
+        "method": "credit",
+        "card": "4000000000001111",
         "cancelled": False,
     },
     {
-        "id": "B3", "name": "Ana Silva", "email": "ana.silva@example.com",
-        "vehicle": "compact", "days": 2, "km": 150, "pickup": date(2026, 12, 20),
-        "extras": [], "dropped": [], "discount": 0,
-        "method": "debit", "card": "5000000000002222", "cancelled": True,
+        "id": "B2",
+        "name": "Ana Silva",
+        "email": "ana.silva@example.com",
+        "vehicle": "van",
+        "days": 2,
+        "km": 180,
+        "pickup": date(2026, 12, 8),
+        "extras": [("gps", 1_000), ("child_seat", 500)],
+        "dropped": ["gps"],
+        "discount": 0,
+        "method": "debit",
+        "card": "5000000000002222",
+        "cancelled": False,
+    },
+    {
+        "id": "B3",
+        "name": "Ana Silva",
+        "email": "ana.silva@example.com",
+        "vehicle": "compact",
+        "days": 2,
+        "km": 150,
+        "pickup": date(2026, 12, 20),
+        "extras": [],
+        "dropped": [],
+        "discount": 0,
+        "method": "debit",
+        "card": "5000000000002222",
+        "cancelled": True,
     },
 ]
 
 
-@dataclass
-class Customer:
-    name: str
-    email: str
+def build_contract(row: dict, vehicles: dict[str, Vehicle]) -> RentalContract:
+    contract = RentalContract(
+        row["id"],
+        Customer(row["name"], row["email"]),
+        vehicles[row["vehicle"]],
+        row["days"],
+        row["km"],
+        row["pickup"],
+        discount_percent=row["discount"],
+    )
+    for name, price in row["extras"]:
+        contract.add_extra(Extra(name, price))
+    for name in row["dropped"]:  # changed their mind at the desk
+        contract.remove_extra(name)
+    return contract
 
 
-class Booking:
-    def __init__(self, booking_id, customer, vehicle_type, days, km, pickup):
-        self.booking_id = booking_id
-        self.customer = customer
-        self.vehicle_type = vehicle_type
-        self.days = days
-        self.km = km
-        self.pickup = pickup
-        self.extra_names: list[str] = []
-        self.extra_prices: list[int] = []  # cents, same order as extra_names
-        self.price = 0  # cents
-        self.txn = ""
-
-    def add_extra(self, name, price):
-        self.extra_names.append(name)
-        self.extra_prices.append(price)
-
-    def pay(self, card_number, method):
-        if method == "debit":
-            self.txn = card_provider.charge(card_number, self.price)
-            return self.price
-        elif method == "credit":
-            amount = self.price + self.price * CREDIT_FEE_PERCENT // 100
-            self.txn = card_provider.charge(card_number, amount)
-            return amount
-        raise ValueError(f"unknown payment method {method}")
+def print_quote(contract: RentalContract) -> None:
+    print(
+        f"{contract.booking_id} for {contract.customer_name()}: "
+        f"{contract.vehicle_name()}, {contract.days} days, {contract.km} km"
+    )
+    print(f"  rental {euros(contract.rental_price())}")
+    for extra in contract.extras:
+        print(f"  {extra.name} {euros(extra.price)}")
+    off = f" ({contract.discount_percent}% off)" if contract.discount_percent else ""
+    print(f"  quote {euros(contract.discounted_price())}{off}")
 
 
-def compute_rental_cost(vehicle_type, days, km):
-    rate, free_km = VEHICLES[vehicle_type]
-    extra_km = max(0, km - free_km * days)
-    return rate * days + extra_km * CENTS_PER_KM
+def check_out(contract: RentalContract, method: str, card: str) -> payments.Payment:
+    payment = PAY[method](card, contract.discounted_price())
+    events.publish(
+        "booking_confirmed",
+        {
+            "booking_id": contract.booking_id,
+            "email": contract.customer_email(),
+            "amount": euros(payment.amount),
+        },
+    )
+    notifications.send_reminder(contract.customer_email(), contract.pickup)
+    return payment
 
 
-def add_up(prices):
-    if np is not None:
-        return int(np.sum(prices))
-    return sum(prices)
+def cancel(contract: RentalContract, payment: payments.Payment) -> None:
+    payments.refund(payment)
+    events.publish(
+        "booking_cancelled",
+        {
+            "booking_id": contract.booking_id,
+            "email": contract.customer_email(),
+            "amount": euros(payment.amount),
+        },
+    )
 
 
-def apply_discount(booking, percent):
-    booking.price -= booking.price * percent // 100
-    return booking.price
-
-
-def euros(cents):
-    return f"€{cents // 100}.{cents % 100:02d}"
-
-
-def send_confirmation(booking, amount):
-    print(f"  email to {booking.customer.email}: {booking.booking_id} confirmed, "
-          f"{euros(amount)} paid")
-
-
-def write_invoice(booking, amount):
-    print(f"  invoice for {booking.booking_id}: {euros(amount)}")
-
-
-def send_reminder(booking):
-    print(f"  reminder to {booking.customer.email}: pick-up on {booking.pickup}")
-
-
-def main():
+def main() -> None:
+    notifications.register()
+    invoices.register()
     for row in BOOKINGS:
-        customer = Customer(row["name"], row["email"])
-        booking = Booking(row["id"], customer, row["vehicle"], row["days"],
-                          row["km"], row["pickup"])
-        for name, price in row["extras"]:
-            booking.add_extra(name, price)
-        for name in row["dropped"]:  # changed their mind at the desk
-            booking.extra_names.remove(name)
-
-        rental = compute_rental_cost(booking.vehicle_type, booking.days, booking.km)
-        booking.price = add_up([rental, *booking.extra_prices])
-        print(f"{booking.booking_id} for {booking.customer.name}: "
-              f"{booking.vehicle_type}, {booking.days} days, {booking.km} km")
-        print(f"  rental {euros(rental)}")
-        for name, price in zip(booking.extra_names, booking.extra_prices):
-            print(f"  {name} {euros(price)}")
-        if row["discount"]:
-            quote = apply_discount(booking, row["discount"])
-            print(f"  quote {euros(quote)} ({row['discount']}% off)")
-        else:
-            print(f"  quote {euros(booking.price)}")
-
-        # checkout
-        if row["discount"]:
-            apply_discount(booking, row["discount"])
-        amount = booking.pay(row["card"], row["method"])
-        send_confirmation(booking, amount)
-        write_invoice(booking, amount)
-        send_reminder(booking)
-
+        contract = build_contract(row, VEHICLES)
+        print_quote(contract)
+        payment = check_out(contract, row["method"], row["card"])
         if row["cancelled"]:
-            card_provider.refund(booking.txn, amount)
-            print(f"  email to {booking.customer.email}: "
-                  f"{booking.booking_id} cancelled, {euros(amount)} refunded")
+            cancel(contract, payment)
 
 
 if __name__ == "__main__":
