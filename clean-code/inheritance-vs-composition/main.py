@@ -3,11 +3,10 @@
 Run: python3 main.py
 """
 
-
-
-from desk import Customer, book, return_vehicle
-from pricing import InsuredGpsChildSeatCar, InsuredVan
-from vehicles import Bike, Truck
+from desk import Customer, Handover, book, return_vehicle
+from pricing import ChildSeat, DailyRate, Gps, Insurance, RoadToll
+from rental import Rental
+from vehicles import Bike, Car, Truck, Van
 
 
 def euros(cents: int) -> str:
@@ -15,14 +14,26 @@ def euros(cents: int) -> str:
 
 
 def main() -> None:
+    """The one place that knows the concrete classes and the prices."""
     ana = Customer("Ana Silva", {"B", "C"})
-    car = InsuredGpsChildSeatCar("AB-123", 4500)
-    van = InsuredVan("VN-321", 7000)
+    car = Car("AB-123", 4500)
+    van = Van("VN-321", 7000)
     truck = Truck("TR-789", 9000)
     bike = Bike("BK-1", 1000)
+    insurance = Insurance(per_day=1500)
 
-    for vehicle, days in [(car, 3), (van, 2), (truck, 2), (bike, 2)]:
-        b = book(ana, vehicle, days)
+    car_rental = Rental(3, [DailyRate(car.rate), insurance, Gps(per_day=300)])
+    car_rental.parts.append(ChildSeat(per_day=500))  # added at the counter
+
+    bookings: list[tuple[Handover, Rental]] = [
+        (car, car_rental),
+        (van, Rental(2, [DailyRate(van.rate), insurance])),
+        (truck, Rental(2, [DailyRate(truck.rate), RoadToll(per_day=2000)])),
+        (bike, Rental(2, [DailyRate(bike.rate)])),
+    ]
+
+    for vehicle, rental in bookings:
+        b = book(ana, vehicle, rental)
         print(
             f"{b.customer}  {b.plate:<6}  {b.days} days"
             f"  total {euros(b.total):>6}  deposit {euros(b.deposit):>6}"

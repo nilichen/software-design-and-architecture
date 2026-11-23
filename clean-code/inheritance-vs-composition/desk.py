@@ -1,8 +1,9 @@
-"""The rental desk: licence check, deposit, booking and returns."""
+"""The rental desk: booking and returns. Each function asks only for what it uses."""
 
 from dataclasses import dataclass
+from typing import Protocol
 
-from vehicles import Bike, Car, Truck, Van, Vehicle
+from rental import Rental
 
 
 @dataclass
@@ -20,34 +21,26 @@ class Booking:
     deposit: int  # cents
 
 
-def licence_ok(vehicle: Vehicle, licences: set[str]) -> bool:
-    if isinstance(vehicle, (Car, Van)):
-        return "B" in licences
-    elif isinstance(vehicle, Truck):
-        return "C" in licences
-    else:  # bike
-        return True
+class Handover(Protocol):
+    plate: str
+
+    def licence_ok(self, licences: set[str]) -> bool: ...
+
+    def deposit(self) -> int: ...  # cents
 
 
-def deposit(vehicle: Vehicle) -> int:
-    if isinstance(vehicle, Truck):
-        return 50000
-    elif isinstance(vehicle, Car):
-        return 30000
-    else:  # bike
-        return 5000
+class Fuelable(Protocol):
+    def refuel(self, litres: int) -> int: ...  # cents
 
 
-def book(customer: Customer, vehicle: Vehicle, days: int) -> Booking:
-    if not licence_ok(vehicle, customer.licences):
+def book(customer: Customer, vehicle: Handover, rental: Rental) -> Booking:
+    if not vehicle.licence_ok(customer.licences):
         raise ValueError(f"{customer.name} may not drive {vehicle.plate}")
     return Booking(
-        customer.name, vehicle.plate, days, vehicle.reserve(days), deposit(vehicle)
+        customer.name, vehicle.plate, rental.days, rental.total(), vehicle.deposit()
     )
 
 
-def return_vehicle(vehicle: Vehicle, litres: int) -> int:
+def return_vehicle(vehicle: Fuelable, litres: int) -> int:
     """Fuel charge in cents when the vehicle comes back."""
-    if isinstance(vehicle, Bike):
-        return 0  # Bike.refuel raises
     return vehicle.refuel(litres)

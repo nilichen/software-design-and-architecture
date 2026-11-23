@@ -1,43 +1,61 @@
-"""The fleet. Every vehicle is a Vehicle, and the parent holds the shared code."""
+"""The fleet. Each vehicle answers the desk's questions itself, so no code asks its kind."""
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 FUEL_PER_LITRE = 190  # cents
-ROAD_TOLL = 2000  # cents per day, trucks only
 
 
 @dataclass
-class Vehicle:
+class MotorVehicle(ABC):
+    """Shared state and code for vehicles with a tank. One level deep, no more."""
+
     plate: str
     rate: int  # cents per day
-
-    def daily_price(self) -> int:
-        return self.rate
-
-    def reserve(self, days: int) -> int:
-        # Was self.rate * days. Goes through daily_price now, so add-ons get charged.
-        return self.daily_price() * days
 
     def refuel(self, litres: int) -> int:
         return FUEL_PER_LITRE * litres
 
+    @abstractmethod
+    def licence_ok(self, licences: set[str]) -> bool: ...
 
-class Car(Vehicle):
-    pass
-
-
-class Van(Vehicle):
-    pass
+    @abstractmethod
+    def deposit(self) -> int: ...
 
 
-class Truck(Vehicle):
-    def daily_price(self) -> int:  # shown on the website's price list
-        return self.rate + ROAD_TOLL
+class Car(MotorVehicle):
+    def licence_ok(self, licences: set[str]) -> bool:
+        return "B" in licences
 
-    def reserve(self, days: int) -> int:  # written when reserve used self.rate
-        return super().reserve(days) + ROAD_TOLL * days
+    def deposit(self) -> int:
+        return 30000
 
 
-class Bike(Vehicle):
-    def refuel(self, litres: int) -> int:
-        raise NotImplementedError("a bike has no tank")
+class Van(MotorVehicle):
+    def licence_ok(self, licences: set[str]) -> bool:
+        return "B" in licences
+
+    def deposit(self) -> int:
+        return 40000
+
+
+class Truck(MotorVehicle):
+    def licence_ok(self, licences: set[str]) -> bool:
+        return "C" in licences
+
+    def deposit(self) -> int:
+        return 50000
+
+
+@dataclass
+class Bike:
+    """No tank, so no refuel method to fake."""
+
+    plate: str
+    rate: int  # cents per day
+
+    def licence_ok(self, licences: set[str]) -> bool:
+        return True
+
+    def deposit(self) -> int:
+        return 5000

@@ -1,43 +1,43 @@
-"""Add-ons as mixins: each one adds its charge to daily_price and passes the call on."""
+"""Price parts. Each one fits rental.PriceComponent without importing it."""
 
-from vehicles import Car, Truck, Van
-
-INSURANCE_PER_DAY = 1500  # cents
-GPS_PER_DAY = 300
-CHILD_SEAT_PER_DAY = 500
+from dataclasses import dataclass
 
 
-class InsuranceMixin:
-    def daily_price(self) -> int:
-        return super().daily_price() + INSURANCE_PER_DAY  # type: ignore[misc, no-any-return]
+@dataclass
+class DailyRate:
+    cents: int
+
+    def price(self, days: int) -> int:
+        return self.cents * days
 
 
-class GpsMixin:
-    def daily_price(self) -> int:
-        return super().daily_price() + GPS_PER_DAY  # type: ignore[misc, no-any-return]
+@dataclass
+class Insurance:
+    per_day: int  # cents
+
+    def price(self, days: int) -> int:
+        return self.per_day * days
 
 
-class ChildSeatMixin:
-    def daily_price(self) -> int:
-        return super().daily_price() + CHILD_SEAT_PER_DAY  # type: ignore[misc, no-any-return]
+@dataclass
+class Gps:
+    per_day: int  # cents
+
+    def price(self, days: int) -> int:
+        return self.per_day * days
 
 
-# One class per vehicle and add-on combination.
-class InsuredCar(InsuranceMixin, Car):
-    pass
+@dataclass
+class ChildSeat:
+    per_day: int  # cents
+
+    def price(self, days: int) -> int:
+        return self.per_day * days
 
 
-class InsuredGpsCar(InsuranceMixin, GpsMixin, Car):
-    pass
+@dataclass
+class RoadToll:
+    per_day: int  # cents
 
-
-class InsuredGpsChildSeatCar(InsuranceMixin, GpsMixin, ChildSeatMixin, Car):
-    pass
-
-
-class InsuredVan(Van, InsuranceMixin):
-    pass
-
-
-class InsuredTruck(InsuranceMixin, Truck):
-    pass
+    def price(self, days: int) -> int:
+        return self.per_day * days
