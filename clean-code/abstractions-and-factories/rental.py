@@ -1,9 +1,7 @@
-"""A rental contract and what it costs. Money is in integer cents."""
+"""Things a customer pays for: a rental contract and a damage fee. Money is in cents."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, auto
-
-from pricing import Discount
 
 
 class PaymentStatus(Enum):
@@ -18,11 +16,28 @@ class RentalContract:
     days: int
     daily_rate: int
     fuel_charge: int = 0
-    discounts: list[Discount] = field(default_factory=list)
+    percent_off: int = 0
+    fixed_off: int = 0
     status: PaymentStatus = PaymentStatus.OPEN
 
     def total_price(self) -> int:
         price = self.days * self.daily_rate + self.fuel_charge
-        for discount in self.discounts:
-            price = discount.apply(price)
-        return price
+        price -= price * self.percent_off // 100
+        return max(price - self.fixed_off, 0)
+
+    def mark_paid(self) -> None:
+        self.status = PaymentStatus.PAID
+
+
+@dataclass
+class DamageFee:
+    plate: str
+    description: str
+    amount: int
+    status: PaymentStatus = PaymentStatus.OPEN
+
+    def total_price(self) -> int:
+        return self.amount
+
+    def mark_paid(self) -> None:
+        self.status = PaymentStatus.PAID

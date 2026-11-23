@@ -1,6 +1,16 @@
 """Saving a booking and confirming it by mail."""
 
+from typing import Protocol
+
 from rental import RentalContract
+
+
+class BookingStore(Protocol):
+    def save(self, rental: RentalContract) -> None: ...
+
+
+class Mailer(Protocol):
+    def send(self, to: str, text: str) -> None: ...
 
 
 class SqliteBookings:  # stands in for the real bookings database
@@ -20,9 +30,9 @@ class SmtpMailer:  # stands in for the client of the company mail server
 
 
 class BookingService:
-    def __init__(self) -> None:
-        self.store = SqliteBookings("rentals.db")
-        self.mailer = SmtpMailer("smtp.example.com")
+    def __init__(self, store: BookingStore, mailer: Mailer) -> None:
+        self.store = store
+        self.mailer = mailer
 
     def book(self, rental: RentalContract, email: str) -> None:
         self.store.save(rental)
