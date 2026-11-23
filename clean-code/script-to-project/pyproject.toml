@@ -1,0 +1,22 @@
+[project]
+name = "car-rental"
+version = "0.1.0"
+description = "A made-up car-rental app: bookings priced in integer cents."
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest", "ruff"]
+
+[tool.ruff]
+# Ruff reads this file only inside after/. The sibling before/ folder is the
+# deliberately unformatted script, so it is outside the checks on purpose.
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
